@@ -1,0 +1,17 @@
+# Dependencies
+/node_modules
+
+# Environment Variables - IMPORTANT
+.env
+
+# Logs
+npm-debug.log
+yarn-error.log
+
+# Local Database Files (from previous SQLite version)
+diary.db
+diary.db-journal
+
+# Operating System generated files
+.DS_Store
+Thumbs.db

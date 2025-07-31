@@ -1,0 +1,23 @@
+{
+  "name": "engineering-diary-bot",
+  "version": "1.0.0",
+  "description": "A Telegram bot to help track engineering progress and learning.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "engineering",
+    "diary"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
+    "pg": "^8.12.0"
+  }
+}
