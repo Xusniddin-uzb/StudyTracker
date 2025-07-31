@@ -55,13 +55,13 @@ function generatePdfBuffer(buildPdfCallback) {
 
 // --- CORE LOGIC FUNCTIONS ---
 async function startQuiz(chatId) {
-    bot.sendMessage(chatId, "🧠 How would you like to take your quiz?", getQuizFormatKeyboard());
+    await bot.sendMessage(chatId, "🧠 How would you like to take your quiz?", getQuizFormatKeyboard());
 }
 
 async function generatePdfQuiz(chatId) {
-    bot.sendMessage(chatId, "🧠 Preparing your personalized quiz as a PDF...");
+    await bot.sendMessage(chatId, "🧠 Preparing your personalized quiz as a PDF...");
     const learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date());
-    if (learnings.length < 3) { bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to generate a quiz."); return; }
+    if (learnings.length < 3) { await bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to generate a quiz."); return; }
     const quizText = await ai.generateWeeklyAnalysis(learnings, 'quiz');
     try {
         const pdfBuffer = await generatePdfBuffer((doc) => {
@@ -70,23 +70,23 @@ async function generatePdfQuiz(chatId) {
             doc.fontSize(12).font('Helvetica').text(quizText);
         });
         await bot.sendDocument(chatId, pdfBuffer, { caption: "Here is your personalized quiz. Good luck! 🍀" }, { filename: 'personalized-quiz.pdf', contentType: 'application/pdf' });
-    } catch (error) { console.error("Failed to generate or send quiz PDF:", error.message); bot.sendMessage(chatId, "❌ Sorry, there was an error creating or sending your quiz PDF."); }
+    } catch (error) { console.error("Failed to generate or send quiz PDF:", error.message); await bot.sendMessage(chatId, "❌ Sorry, there was an error creating or sending your quiz PDF."); }
 }
 
 async function startInlineQuiz(chatId) {
-    bot.sendMessage(chatId, "💬 Let's start! I'll ask you questions one by one. Use /stop when you want to end the quiz.");
+    await bot.sendMessage(chatId, "💬 Let's start! I'll ask you questions one by one. Use /stop when you want to end the quiz.");
     const learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date());
-    if (learnings.length < 3) { bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to start a quiz."); return; }
+    if (learnings.length < 3) { await bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to start a quiz."); return; }
     userStates[chatId] = { command: 'inline_quiz', learnings, history: [] };
     const firstQuestion = await ai.getNextQuizQuestion(learnings, []);
-    if (firstQuestion) { userStates[chatId].lastQuestion = firstQuestion; bot.sendMessage(chatId, firstQuestion); }
-    else { bot.sendMessage(chatId, "I couldn't think of a question right now. Sorry!"); delete userStates[chatId]; }
+    if (firstQuestion) { userStates[chatId].lastQuestion = firstQuestion; await bot.sendMessage(chatId, firstQuestion); }
+    else { await bot.sendMessage(chatId, "I couldn't think of a question right now. Sorry!"); delete userStates[chatId]; }
 }
 
 async function handleExport(chatId) {
-    bot.sendMessage(chatId, "📤 Preparing your learning export as a PDF...");
+    await bot.sendMessage(chatId, "📤 Preparing your learning export as a PDF...");
     const learnings = await db.getAllUserLearnings(chatId);
-    if (learnings.length === 0) { bot.sendMessage(chatId, "📭 No learnings to export yet."); return; }
+    if (learnings.length === 0) { await bot.sendMessage(chatId, "📭 No learnings to export yet."); return; }
     try {
         const pdfBuffer = await generatePdfBuffer((doc) => {
             doc.fontSize(20).font('Helvetica-Bold').text('Your Learning Diary', { align: 'center' }).moveDown(2);
@@ -98,7 +98,7 @@ async function handleExport(chatId) {
             });
         });
         await bot.sendDocument(chatId, pdfBuffer, { caption: `📚 Here is your complete learning diary.\n📊 Total entries: ${learnings.length}` }, { filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.pdf`, contentType: 'application/pdf' });
-    } catch (error) { console.error("Failed to generate or send export PDF:", error.message); bot.sendMessage(chatId, "❌ Sorry, there was an error creating or sending your PDF file."); }
+    } catch (error) { console.error("Failed to generate or send export PDF:", error.message); await bot.sendMessage(chatId, "❌ Sorry, there was an error creating or sending your PDF file."); }
 }
 
 async function processLearningEntry(chatId, content, category = null, generateFollowUp = true) {
@@ -112,12 +112,12 @@ async function processLearningEntry(chatId, content, category = null, generateFo
         progressText += `\n🎯 Daily goal progress: ${progress}%`;
         if (todayCount >= userGoal) { progressText += `\n🎉 Daily goal achieved! Streak: ${streak} days`; }
     }
-    bot.sendMessage(chatId, progressText, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, progressText, { parse_mode: 'Markdown' });
     if (generateFollowUp) {
-        bot.sendMessage(chatId, "🤔 Let me think of a good question...");
+        await bot.sendMessage(chatId, "🤔 Let me think of a good question...");
         const followUp = await ai.generateFollowUpQuestion(content);
         userStates[chatId] = { command: 'ai_convo', originalContent: content };
-        bot.sendMessage(chatId, `💭 ${followUp}\n\n*Reply to continue our discussion or use /stop to end*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '✋ Stop Discussion', callback_data: 'stop_convo' }, { text: '📚 Log Another', callback_data: 'quick_learn' }]] } });
+        await bot.sendMessage(chatId, `💭 ${followUp}\n\n*Reply to continue our discussion or use /stop to end*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '✋ Stop Discussion', callback_data: 'stop_convo' }, { text: '📚 Log Another', callback_data: 'quick_learn' }]] } });
     }
 }
 
@@ -137,13 +137,37 @@ async function showUserStats(chatId) {
         statsText += `🏆 *Top Categories:*\n`;
         topCategories.forEach((cat, i) => { statsText += `${i + 1}. ${cat.name}: ${cat.count} learnings\n`; });
     }
-    bot.sendMessage(chatId, statsText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎯 Set Goal', callback_data: 'manage_goals' }, { text: '📤 Export Data', callback_data: 'export_data' }]] } });
+    await bot.sendMessage(chatId, statsText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🎯 Set Goal', callback_data: 'manage_goals' }, { text: '📤 Export Data', callback_data: 'export_data' }]] } });
+}
+
+// NEW: Reusable function to show the goal management options
+async function sendGoalManagementMessage(chatId, messageId = null) {
+    const currentGoal = await db.getUserGoal(chatId);
+    const text = `🎯 *Daily Learning Goals*\n\n${currentGoal ? `Current goal: ${currentGoal} learnings per day` : 'No goal set yet'}\n\nHow many things would you like to learn each day?`;
+    const options = {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '1️⃣ 1/day', callback_data: 'goal_1' }, { text: '2️⃣ 2/day', callback_data: 'goal_2' }, { text: '3️⃣ 3/day', callback_data: 'goal_3' }],
+                [{ text: '5️⃣ 5/day', callback_data: 'goal_5' }, { text: '🔢 Custom', callback_data: 'goal_custom' }, { text: '❌ Remove', callback_data: 'goal_0'}]
+            ]
+        }
+    };
+
+    if (messageId) {
+        try {
+            await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...options });
+        } catch (e) { // If message is old, just send a new one
+            await bot.sendMessage(chatId, text, options);
+        }
+    } else {
+        await bot.sendMessage(chatId, text, options);
+    }
 }
 
 
 // --- BOT EVENT HANDLERS ---
 
-// FIXED: This now correctly shows the welcome message instead of only stats.
 bot.onText(/\/start|\/help/, async (msg) => {
     const chatId = msg.chat.id;
     await db.findOrCreateUser(chatId);
@@ -164,18 +188,19 @@ ${stats.total > 0 ? `🔥 Learning streak: ${streak} days\n📚 Total learnings:
 
 Ready to learn something new today? 🚀
     `;
-    bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown', ...getMainMenuKeyboard() });
+    await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown', ...getMainMenuKeyboard() });
 });
 
-bot.onText(/\/learn(?: (.+))?/, async (msg, match) => { const chatId = msg.chat.id; const content = match[1]; if (!content) { bot.sendMessage(chatId, "📚 *What did you learn today?*\n\nTell me something new...", { parse_mode: 'Markdown', reply_markup: { force_reply: true, input_field_placeholder: "I learned that..." } }); userStates[chatId] = { command: 'waiting_for_learning' }; return; } await processLearningEntry(chatId, content); });
+bot.onText(/\/learn(?: (.+))?/, async (msg, match) => { const chatId = msg.chat.id; const content = match[1]; if (!content) { await bot.sendMessage(chatId, "📚 *What did you learn today?*\n\nTell me something new...", { parse_mode: 'Markdown', reply_markup: { force_reply: true, input_field_placeholder: "I learned that..." } }); userStates[chatId] = { command: 'waiting_for_learning' }; return; } await processLearningEntry(chatId, content); });
 bot.onText(/\/quick/, (msg) => { const chatId = msg.chat.id; bot.sendMessage(chatId, "⚡ *Quick Learning Entry*\n\nJust type what you learned...", { parse_mode: 'Markdown', reply_markup: { force_reply: true, input_field_placeholder: "Quick note..." } }); userStates[chatId] = { command: 'quick_learn' }; });
-bot.onText(/\/search(?: (.+))?/, async (msg, match) => { const chatId = msg.chat.id; const query = match[1]; if (!query) { bot.sendMessage(chatId, "🔍 *Search Your Learnings*\n\nWhat topic would you like to search for?", { parse_mode: 'Markdown', reply_markup: { force_reply: true, input_field_placeholder: "Search for..." } }); userStates[chatId] = { command: 'search' }; return; } const results = await db.searchLearnings(chatId, query); if (results.length === 0) { bot.sendMessage(chatId, `🔍 No learnings found for "${query}"`); return; } const formattedResults = results.map((l, i) => `${i + 1}. ${l.content}\n   📅 ${format(new Date(l.createdAt), 'MMM dd, yyyy')}`).join('\n\n'); bot.sendMessage(chatId, `🔍 *Search Results for "${query}"*\n\n${formattedResults}`, { parse_mode: 'Markdown' }); });
+bot.onText(/\/search(?: (.+))?/, async (msg, match) => { const chatId = msg.chat.id; const query = match[1]; if (!query) { await bot.sendMessage(chatId, "🔍 *Search Your Learnings*\n\nWhat topic would you like to search for?", { parse_mode: 'Markdown', reply_markup: { force_reply: true, input_field_placeholder: "Search for..." } }); userStates[chatId] = { command: 'search' }; return; } const results = await db.searchLearnings(chatId, query); if (results.length === 0) { await bot.sendMessage(chatId, `🔍 No learnings found for "${query}"`); return; } const formattedResults = results.map((l, i) => `${i + 1}. ${l.content}\n   📅 ${format(new Date(l.createdAt), 'MMM dd, yyyy')}`).join('\n\n'); await bot.sendMessage(chatId, `🔍 *Search Results for "${query}"*\n\n${formattedResults}`, { parse_mode: 'Markdown' }); });
 bot.onText(/\/stats/, async (msg) => { await showUserStats(msg.chat.id); });
-bot.onText(/\/goals/, async (msg) => { const chatId = msg.chat.id; const currentGoal = await db.getUserGoal(chatId); bot.sendMessage(chatId, `🎯 *Daily Learning Goals*\n\n${currentGoal ? `Current goal: ${currentGoal} learnings per day` : 'No goal set yet'}\n\nHow many things would you like to learn each day?`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '1️⃣ 1 per day', callback_data: 'goal_1' }, { text: '2️⃣ 2 per day', callback_data: 'goal_2' }, { text: '3️⃣ 3 per day', callback_data: 'goal_3' }], [{ text: '5️⃣ 5 per day', callback_data: 'goal_5' }, { text: '🔢 Custom', callback_data: 'goal_custom' }]] } }); });
+// FIXED: This now correctly calls the reusable function
+bot.onText(/\/goals/, async (msg) => { await sendGoalManagementMessage(msg.chat.id); });
 bot.onText(/\/view/, (msg) => { const chatId = msg.chat.id; bot.sendMessage(chatId, "👀 *View Your Learning History*\n\nWhich period would you like to see?", { parse_mode: 'Markdown', ...getViewOptionsKeyboard() }); });
 bot.onText(/\/export/, async (msg) => { await handleExport(msg.chat.id); });
 bot.onText(/\/quiz/, async (msg) => { await startQuiz(msg.chat.id); });
-bot.onText(/\/summarize/, async (msg) => { const chatId = msg.chat.id; bot.sendMessage(chatId, "🤖 Analyzing your learning journey... This might take a moment."); const learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date()); if (learnings.length === 0) { bot.sendMessage(chatId, "📭 No learnings from the past week."); return; } const summary = await ai.generateWeeklyAnalysis(learnings, 'summary'); bot.sendMessage(chatId, `📝 *Your Weekly Learning Summary*\n\n${summary}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🧠 Take Quiz', callback_data: 'start_quiz' }, { text: '🔙 Main Menu', callback_data: 'main_menu' }]] } }); });
+bot.onText(/\/summarize/, async (msg) => { const chatId = msg.chat.id; await bot.sendMessage(chatId, "🤖 Analyzing your learning journey... This might take a moment."); const learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date()); if (learnings.length === 0) { await bot.sendMessage(chatId, "📭 No learnings from the past week."); return; } const summary = await ai.generateWeeklyAnalysis(learnings, 'summary'); await bot.sendMessage(chatId, `📝 *Your Weekly Learning Summary*\n\n${summary}`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🧠 Take Quiz', callback_data: 'start_quiz' }, { text: '🔙 Main Menu', callback_data: 'main_menu' }]] } }); });
 bot.onText(/\/stop/, (msg) => { const chatId = msg.chat.id; if (userStates[chatId] && (userStates[chatId].command === 'inline_quiz' || userStates[chatId].command === 'ai_convo')) { delete userStates[chatId]; bot.sendMessage(chatId, "✅ *Session ended!* Great job.", { parse_mode: 'Markdown', ...getMainMenuKeyboard() }); } else { bot.sendMessage(chatId, "ℹ️ No active session to stop."); } });
 
 bot.on('callback_query', async (callbackQuery) => {
@@ -183,10 +208,10 @@ bot.on('callback_query', async (callbackQuery) => {
     const action = callbackQuery.data;
     try {
         if (action === 'quiz_pdf') {
-            bot.editMessageText("OK, generating your PDF quiz...", { chat_id: chatId, message_id: callbackQuery.message.message_id });
+            await bot.editMessageText("OK, generating your PDF quiz...", { chat_id: chatId, message_id: callbackQuery.message.message_id });
             await generatePdfQuiz(chatId);
         } else if (action === 'quiz_inline') {
-            bot.editMessageText("OK, starting your interactive quiz...", { chat_id: chatId, message_id: callbackQuery.message.message_id });
+            await bot.editMessageText("OK, starting your interactive quiz...", { chat_id: chatId, message_id: callbackQuery.message.message_id });
             await startInlineQuiz(chatId);
         }
         else if (action.startsWith('view_')) {
@@ -197,7 +222,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 case 'view_week': learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date()); title = "📅 Past 7 Days"; break;
                 case 'view_month': learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 30), new Date()); title = "📅 Past 30 Days"; break;
             }
-            if (learnings) { bot.editMessageText(`*${title}*\n\n${formatLearnings(learnings)}`, { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 View Options', callback_data: 'back_to_view' }, { text: '🏠 Main Menu', callback_data: 'main_menu' }]] } }); }
+            if (learnings) { await bot.editMessageText(`*${title}*\n\n${formatLearnings(learnings)}`, { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '🔙 View Options', callback_data: 'back_to_view' }, { text: '🏠 Main Menu', callback_data: 'main_menu' }]] } }); }
         }
         else if (action.startsWith('cat_')) {
             const categories = { 'cat_tech': 'Tech/Programming', 'cat_science': 'Science', 'cat_creative': 'Creative/Art', 'cat_language': 'Language', 'cat_business': 'Business', 'cat_health': 'Health/Fitness', 'cat_general': 'General', 'cat_skip': null };
@@ -205,16 +230,33 @@ bot.on('callback_query', async (callbackQuery) => {
             await processLearningEntry(chatId, userStates[chatId].pendingContent, categories[action]);
             delete userStates[chatId];
         }
-        else if (action.startsWith('goal_')) { const goalValue = action === 'goal_custom' ? null : parseInt(action.split('_')[1]); if (goalValue) { await db.setUserGoal(chatId, goalValue); bot.editMessageText(`🎯 *Goal Set!*\n\nYour daily learning goal: ${goalValue} per day.`, { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getMainMenuKeyboard() }); } else { bot.editMessageText("🔢 Enter your custom daily goal:", { chat_id: chatId, message_id: callbackQuery.message.message_id, reply_markup: { force_reply: true } }); userStates[chatId] = { command: 'custom_goal' }; } }
+        else if (action.startsWith('goal_')) {
+            const goalValue = parseInt(action.split('_')[1]);
+            if (goalValue > 0) {
+                await db.setUserGoal(chatId, goalValue);
+                await bot.editMessageText(`🎯 *Goal Set!*\n\nYour daily learning goal is now: *${goalValue}* per day.`, { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown' });
+            } else if (goalValue === 0) { // Handle removal of goal
+                await db.removeUserGoal(chatId);
+                await bot.editMessageText(`🎯 *Goal Removed!*\n\nYou no longer have a daily goal set.`, { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown' });
+            } else { // Custom goal
+                await bot.editMessageText("🔢 Enter your custom daily goal (e.g., 4):", { chat_id: chatId, message_id: callbackQuery.message.message_id, reply_markup: { force_reply: true } });
+                userStates[chatId] = { command: 'custom_goal' };
+            }
+        }
+        // FIXED: Added this missing handler for the button on the stats page
+        else if (action === 'manage_goals') {
+            await sendGoalManagementMessage(chatId, callbackQuery.message.message_id);
+        }
         else if (action === 'export_data') { await handleExport(chatId); }
-        else if (action === 'quick_learn') { bot.sendMessage(chatId, "⚡ *Quick Learning Entry*\n\nWhat did you learn?", { parse_mode: 'Markdown', reply_markup: { force_reply: true } }); userStates[chatId] = { command: 'quick_learn' }; }
+        else if (action === 'quick_learn') { await bot.sendMessage(chatId, "⚡ *Quick Learning Entry*\n\nWhat did you learn?", { parse_mode: 'Markdown', reply_markup: { force_reply: true } }); userStates[chatId] = { command: 'quick_learn' }; }
         else if (action === 'show_stats') { await showUserStats(chatId); }
         else if (action === 'start_quiz') { await startQuiz(chatId); }
-        else if (action === 'main_menu') { bot.editMessageText("🏠 *Main Menu*\n\nWhat would you like to do?", { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getMainMenuKeyboard() }); }
-        else if (action === 'back_to_view') { bot.editMessageText("👀 *View Your Learning History*\n\nWhich period would you like to see?", { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getViewOptionsKeyboard() }); }
-        else if (action === 'stop_convo') { delete userStates[chatId]; bot.editMessageText("Ok, discussion ended. What's next?", { chat_id: chatId, message_id: callbackQuery.message.message_id, ...getMainMenuKeyboard() }); }
-        bot.answerCallbackQuery(callbackQuery.id);
-    } catch (error) { console.error('Callback query error:', error.message); bot.answerCallbackQuery(callbackQuery.id, { text: "Something went wrong." }); }
+        else if (action === 'main_menu') { await bot.editMessageText("🏠 *Main Menu*\n\nWhat would you like to do?", { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getMainMenuKeyboard() }); }
+        else if (action === 'back_to_view') { await bot.editMessageText("👀 *View Your Learning History*\n\nWhich period would you like to see?", { chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getViewOptionsKeyboard() }); }
+        else if (action === 'stop_convo') { delete userStates[chatId]; await bot.editMessageText("Ok, discussion ended. What's next?", { chat_id: chatId, message_id: callbackQuery.message.message_id, ...getMainMenuKeyboard() }); }
+        
+        await bot.answerCallbackQuery(callbackQuery.id);
+    } catch (error) { console.error('Callback query error:', error.message); await bot.answerCallbackQuery(callbackQuery.id, { text: "Something went wrong." }); }
 });
 
 bot.on('message', async (msg) => {
@@ -232,23 +274,23 @@ bot.on('message', async (msg) => {
                 if (nextQuestion) {
                     state.lastQuestion = nextQuestion;
                     state.history.push({ role: 'assistant', content: nextQuestion });
-                    bot.sendMessage(chatId, nextQuestion);
+                    await bot.sendMessage(chatId, nextQuestion);
                 } else {
-                    bot.sendMessage(chatId, "You've answered all the questions I can think of. Great job! Use /start to return to the menu.");
+                    await bot.sendMessage(chatId, "You've answered all the questions I can think of. Great job! Use /start to return to the menu.");
                     delete userStates[chatId];
                 }
                 break;
-            case 'waiting_for_learning': userStates[chatId].pendingContent = msg.text; bot.sendMessage(chatId, "🏷️ *Choose a category* (optional):", { parse_mode: 'Markdown', ...getLearningCategories() }); break;
+            case 'waiting_for_learning': userStates[chatId].pendingContent = msg.text; await bot.sendMessage(chatId, "🏷️ *Choose a category* (optional):", { parse_mode: 'Markdown', ...getLearningCategories() }); break;
             case 'quick_learn': await processLearningEntry(chatId, msg.text, null, false); delete userStates[chatId]; break;
-            case 'search': const results = await db.searchLearnings(chatId, msg.text); if (results.length === 0) { bot.sendMessage(chatId, `🔍 No results found for "${msg.text}"`); } else { const formattedResults = results.slice(0, 10).map((l, i) => `${i + 1}. ${l.content}\n   📅 ${format(new Date(l.createdAt), 'MMM dd')}`).join('\n\n'); bot.sendMessage(chatId, `🔍 *Found ${results.length} result(s) for "${msg.text}"*\n\n${formattedResults}${results.length > 10 ? '\n\n...and more' : ''}`, { parse_mode: 'Markdown' }); } delete userStates[chatId]; break;
-            case 'custom_goal': const goalNum = parseInt(msg.text); if (goalNum && goalNum > 0 && goalNum <= 50) { await db.setUserGoal(chatId, goalNum); bot.sendMessage(chatId, `🎯 Perfect! Your daily goal is set to ${goalNum} learnings per day.`, { ...getMainMenuKeyboard() }); } else { bot.sendMessage(chatId, "❌ Please enter a valid number between 1 and 50."); return; } delete userStates[chatId]; break;
-            case 'ai_convo': const userReply = msg.text; await db.addLearning(chatId, `💭 Follow-up thought: ${userReply}`); const followUp = await ai.generateFollowUpQuestion(userReply); bot.sendMessage(chatId, `🤔 ${followUp}\n\n*Keep the conversation going or /stop*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '✋ End Discussion', callback_data: 'stop_convo' }, { text: '📚 New Learning', callback_data: 'quick_learn' }]] } }); break;
+            case 'search': const results = await db.searchLearnings(chatId, msg.text); if (results.length === 0) { await bot.sendMessage(chatId, `🔍 No results found for "${msg.text}"`); } else { const formattedResults = results.slice(0, 10).map((l, i) => `${i + 1}. ${l.content}\n   📅 ${format(new Date(l.createdAt), 'MMM dd')}`).join('\n\n'); await bot.sendMessage(chatId, `🔍 *Found ${results.length} result(s) for "${msg.text}"*\n\n${formattedResults}${results.length > 10 ? '\n\n...and more' : ''}`, { parse_mode: 'Markdown' }); } delete userStates[chatId]; break;
+            case 'custom_goal': const goalNum = parseInt(msg.text); if (goalNum && goalNum > 0 && goalNum <= 50) { await db.setUserGoal(chatId, goalNum); await bot.sendMessage(chatId, `🎯 Perfect! Your daily goal is set to ${goalNum} learnings per day.`, { ...getMainMenuKeyboard() }); } else { await bot.sendMessage(chatId, "❌ Please enter a valid number between 1 and 50."); return; } delete userStates[chatId]; break;
+            case 'ai_convo': const userReply = msg.text; await db.addLearning(chatId, `💭 Follow-up thought: ${userReply}`); const followUp = await ai.generateFollowUpQuestion(userReply); await bot.sendMessage(chatId, `🤔 ${followUp}\n\n*Keep the conversation going or /stop*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '✋ End Discussion', callback_data: 'stop_convo' }, { text: '📚 New Learning', callback_data: 'quick_learn' }]] } }); break;
         }
-    } catch (error) { console.error('Message handling error:', error.message); bot.sendMessage(chatId, "❌ Something went wrong. Please try again or use /start for help."); delete userStates[chatId]; }
+    } catch (error) { console.error('Message handling error:', error.message); await bot.sendMessage(chatId, "❌ Something went wrong. Please try again or use /start for help."); delete userStates[chatId]; }
 });
 
 // --- CRON JOB & ERROR HANDLING ---
-cron.schedule('0 20 * * 0', async () => { const users = await db.getAllUsers(); for (const user of users) { const weekLearnings = await db.getLearningsForDateRange(user.chatId, subDays(new Date(), 7), new Date()); if (weekLearnings.length > 0) { const summary = await ai.generateWeeklyAnalysis(weekLearnings, 'summary'); bot.sendMessage(user.chatId, `🎓 *Weekly Learning Wrap-up*\n\n${summary}\n\n🚀 Ready for another week of learning?`, { parse_mode: 'Markdown', ...getMainMenuKeyboard() }); } } });
+cron.schedule('0 20 * * 0', async () => { const users = await db.getAllUsers(); for (const user of users) { const weekLearnings = await db.getLearningsForDateRange(user.chatId, subDays(new Date(), 7), new Date()); if (weekLearnings.length > 0) { const summary = await ai.generateWeeklyAnalysis(weekLearnings, 'summary'); await bot.sendMessage(user.chatId, `🎓 *Weekly Learning Wrap-up*\n\n${summary}\n\n🚀 Ready for another week of learning?`, { parse_mode: 'Markdown', ...getMainMenuKeyboard() }); } } });
 bot.on('polling_error', (error) => { console.error(`[Polling Error] ${error.code}: ${error.message}`); });
 
-console.log("🚀 Enhanced AI Learning Diary Bot is running...");
+console.log("🚀 AI Learning Diary Bot is running...");
