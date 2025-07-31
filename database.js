@@ -1,78 +1,71 @@
-const { Pool } = require('pg');
+const mongoose = require('mongoose');
 
-// The pg library will automatically use the DATABASE_URL environment variable
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    // This SSL configuration is required for services like Render or Heroku
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
-
-// Function to initialize the database schema
-const initializeSchema = async () => {
-    const userTableQuery = `
-    CREATE TABLE IF NOT EXISTS users (
-        chat_id BIGINT PRIMARY KEY,
-        quiz_day INT DEFAULT 0,
-        quiz_time INT DEFAULT 20
-    );`;
-
-    const logsTableQuery = `
-    CREATE TABLE IF NOT EXISTS logs (
-        id SERIAL PRIMARY KEY,
-        chat_id BIGINT,
-        work TEXT,
-        learn TEXT,
-        blockers TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );`;
-
+// --- Connect to MongoDB ---
+const connectDB = async () => {
     try {
-        await pool.query(userTableQuery);
-        await pool.query(logsTableQuery);
-        console.log("Database schema is ready.");
-    } catch (err) {
-        console.error("Error initializing schema:", err);
+        await mongoose.connect(process.env.MONGODB_URI);
+        console.log("MongoDB connection SUCCESS");
+    } catch (error) {
+        console.error("MongoDB connection FAIL:", error);
+        process.exit(1);
     }
 };
+connectDB();
 
-// Immediately initialize the schema when the app starts
-initializeSchema();
+// --- Define Schemas ---
+const UserSchema = new mongoose.Schema({
+    chatId: { type: Number, required: true, unique: true, index: true },
+    quizDay: { type: Number, default: 0 }, // 0=Sunday, 1=Monday, ...
+    quizTime: { type: Number, default: 20 }  // Hour of the day (0-23)
+});
 
+const LogSchema = new mongoose.Schema({
+    chatId: { type: Number, required: true, index: true },
+    work: String,
+    learn: String,
+    blockers: String
+}, { timestamps: true }); // `timestamps: true` adds `createdAt` and `updatedAt`
+
+// --- Create Models ---
+const User = mongoose.model('User', UserSchema);
+const Log = mongoose.model('Log', LogSchema);
+
+
+// --- Database Functions ---
 
 const findOrCreateUser = async (chatId) => {
-    const query = `
-        INSERT INTO users (chat_id) VALUES ($1)
-        ON CONFLICT (chat_id) DO NOTHING;
-    `;
-    await pool.query(query, [chatId]);
+    // `upsert: true` creates the document if it doesn't exist.
+    await User.findOneAndUpdate({ chatId }, {}, { upsert: true, new: true });
 };
 
 const setQuizTime = async (chatId, day, time) => {
-    const query = 'UPDATE users SET quiz_day = $1, quiz_time = $2 WHERE chat_id = $3';
-    await pool.query(query, [day, time, chatId]);
+    await User.updateOne({ chatId }, { quizDay: day, quizTime: time });
 };
 
 const addLog = async (chatId, { work, learn, blockers }) => {
-    const query = 'INSERT INTO logs (chat_id, work, learn, blockers) VALUES ($1, $2, $3, $4)';
-    await pool.query(query, [chatId, work, learn, blockers]);
+    await Log.create({ chatId, work, learn, blockers });
 };
 
 const getWeeklyLogs = async (chatId) => {
-    const query = `
-        SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, work, learn, blockers
-        FROM logs
-        WHERE chat_id = $1 AND created_at >= NOW() - interval '7 days'
-        ORDER BY created_at ASC;
-    `;
-    const res = await pool.query(query, [chatId]);
-    return res.rows;
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const logs = await Log.find({
+        chatId,
+        createdAt: { $gte: sevenDaysAgo }
+    }).sort({ createdAt: 'asc' });
+    
+    // Format logs to match what the AI function expects
+    return logs.map(log => ({
+        date: log.createdAt.toISOString().split('T')[0],
+        work: log.work,
+        learn: log.learn,
+        blockers: log.blockers,
+    }));
 };
 
 const getAllUsers = async () => {
-    const res = await pool.query('SELECT * FROM users');
-    return res.rows;
+    return User.find({});
 };
 
 module.exports = { findOrCreateUser, setQuizTime, addLog, getWeeklyLogs, getAllUsers };
