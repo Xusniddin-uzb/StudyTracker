@@ -222,11 +222,22 @@ async function handleExport(chatId) {
         return `[${date}] ${category}${l.content}`;
     }).join('\n');
 
-    // CHANGE: Corrected the bot.sendDocument call. Options like filename and caption go in the same object.
-    bot.sendDocument(chatId, Buffer.from(exportText), {
-        caption: `📚 Your complete learning diary\n📊 Total entries: ${learnings.length}`,
-        filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.txt`
-    });
+    const fileBuffer = Buffer.from(exportText, 'utf-8');
+
+    // The 'options' object is for the message caption
+    const options = {
+        caption: `📚 Your complete learning diary\n📊 Total entries: ${learnings.length}`
+    };
+
+    // The 'fileOptions' object describes the file itself
+    const fileOptions = {
+        filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.txt`,
+        // CHANGE: This line is added to fix the crash
+        contentType: 'text/plain' 
+    };
+
+    // The sendDocument call now includes both options and fileOptions
+    bot.sendDocument(chatId, fileBuffer, options, fileOptions);
 }
 
 // CHANGE: Added a 'generateFollowUp' parameter to control AI questions
