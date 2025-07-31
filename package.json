@@ -17,8 +17,10 @@
   "dependencies": {
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
+    "marked": "^16.1.1",
     "mongoose": "^8.17.0",
     "node-cron": "^3.0.3",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "puppeteer": "^24.15.0"
   }
 }

@@ -5,6 +5,10 @@ const db = require('./database');
 const ai = require('./ai');
 const { startOfDay, endOfDay, subDays, format } = require('date-fns');
 
+// Added new libraries for PDF generation and Markdown conversion
+const puppeteer = require('puppeteer');
+const { marked } = require('marked');
+
 const token = process.env.TELEGRAM_API_TOKEN;
 if (!token) {
     console.error("FATAL ERROR: TELEGRAM_API_TOKEN is not defined.");
@@ -69,7 +73,8 @@ const getLearningCategories = () => ({
     }
 });
 
-// --- Bot Commands ---
+
+// --- BOT COMMANDS ---
 bot.onText(/\/start|\/help/, async (msg) => {
     const chatId = msg.chat.id;
     await db.findOrCreateUser(chatId);
@@ -140,8 +145,7 @@ bot.onText(/\/search(?: (.+))?/, async (msg, match) => {
 });
 
 bot.onText(/\/stats/, async (msg) => {
-    const chatId = msg.chat.id;
-    await showUserStats(chatId);
+    await showUserStats(msg.chat.id);
 });
 
 bot.onText(/\/goals/, async (msg) => {
@@ -166,7 +170,6 @@ bot.onText(/\/view/, (msg) => {
     });
 });
 
-// CHANGE: This now calls the dedicated handleExport function
 bot.onText(/\/export/, async (msg) => {
     await handleExport(msg.chat.id);
 });
@@ -204,43 +207,89 @@ bot.onText(/\/stop/, (msg) => {
 });
 
 
-// --- Helper Functions ---
+// --- HELPER FUNCTIONS ---
 
-// CHANGE: Created a dedicated function for exporting data to avoid repetition
+// This function takes HTML content and returns a PDF buffer
+async function generatePdf(htmlContent) {
+    let browser = null;
+    try {
+        // Launch a headless browser. The args are important for running in containerized environments.
+        browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+        const page = await browser.newPage();
+        
+        // Set the HTML content of the page
+        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        
+        // Generate the PDF
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' }
+        });
+        
+        return pdfBuffer;
+    } catch (error) {
+        console.error("Error generating PDF:", error);
+        return null; // Return null if PDF generation fails
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
+    }
+}
+
+// Exports learning data as a PDF file
 async function handleExport(chatId) {
-    bot.sendMessage(chatId, "📤 Preparing your learning export... This may take a moment.");
-    
+    bot.sendMessage(chatId, "📤 Preparing your learning export as a PDF... This may take a moment.");
+
     const learnings = await db.getAllUserLearnings(chatId);
     if (learnings.length === 0) {
-        bot.sendMessage(chatId, "📭 No learnings to export yet. Start logging your learning journey!");
+        bot.sendMessage(chatId, "📭 No learnings to export yet.");
         return;
     }
 
-    const exportText = learnings.map(l => {
+    // Generate HTML from the learning data
+    const learningsHtml = learnings.map(l => {
         const date = format(new Date(l.createdAt), 'yyyy-MM-dd HH:mm');
-        const category = l.category ? `[${l.category}] ` : '';
-        return `[${date}] ${category}${l.content}`;
+        const category = l.category ? `<b>[${l.category}]</b> ` : '';
+        const content = l.content.replace(/</g, "&lt;").replace(/>/g, "&gt;"); // Sanitize HTML in content
+        return `<p><em>${date}</em>: ${category}${content}</p>`;
     }).join('\n');
 
-    const fileBuffer = Buffer.from(exportText, 'utf-8');
+    const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Learning Diary Export</title>
+            <style>
+                body { font-family: sans-serif; line-height: 1.6; }
+                h1 { color: #2c3e50; }
+                p { border-bottom: 1px solid #eee; padding-bottom: 10px; }
+                b { color: #2980b9; }
+                em { color: #7f8c8d; }
+            </style>
+        </head>
+        <body>
+            <h1>Your Learning Diary</h1>
+            ${learningsHtml}
+        </body>
+        </html>
+    `;
 
-    // The 'options' object is for the message caption
-    const options = {
-        caption: `📚 Your complete learning diary\n📊 Total entries: ${learnings.length}`
-    };
+    const pdfBuffer = await generatePdf(fullHtml);
 
-    // The 'fileOptions' object describes the file itself
-    const fileOptions = {
-        filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.txt`,
-        // CHANGE: This line is added to fix the crash
-        contentType: 'text/plain' 
-    };
-
-    // The sendDocument call now includes both options and fileOptions
-    bot.sendDocument(chatId, fileBuffer, options, fileOptions);
+    if (pdfBuffer) {
+        bot.sendDocument(chatId, pdfBuffer, {
+            caption: `📚 Here is your complete learning diary.\n📊 Total entries: ${learnings.length}`
+        }, {
+            filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+            contentType: 'application/pdf',
+        });
+    } else {
+        bot.sendMessage(chatId, "❌ Sorry, there was an error creating your PDF file.");
+    }
 }
 
-// CHANGE: Added a 'generateFollowUp' parameter to control AI questions
 async function processLearningEntry(chatId, content, category = null, generateFollowUp = true) {
     await db.addLearning(chatId, content, category);
     
@@ -260,7 +309,6 @@ async function processLearningEntry(chatId, content, category = null, generateFo
     
     bot.sendMessage(chatId, progressText, { parse_mode: 'Markdown' });
     
-    // CHANGE: This block now only runs if generateFollowUp is true
     if (generateFollowUp) {
         bot.sendMessage(chatId, "🤔 Let me think of a good question...");
         const followUp = await ai.generateFollowUpQuestion(content);
@@ -310,25 +358,60 @@ async function showUserStats(chatId) {
     });
 }
 
+// Generates a quiz as a PDF file
 async function startQuiz(chatId) {
-    bot.sendMessage(chatId, "🧠 Preparing your personalized quiz...");
-    
+    bot.sendMessage(chatId, "🧠 Preparing your personalized quiz as a PDF...");
+
     const learnings = await db.getLearningsForDateRange(chatId, subDays(new Date(), 7), new Date());
     if (learnings.length < 3) {
-        bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to generate a quiz.", { ...getMainMenuKeyboard() });
+        bot.sendMessage(chatId, "📚 You need at least 3 learnings from the past week to generate a quiz.");
         return;
     }
+
+    // Get quiz content (assuming it's Markdown from the AI)
+    const quizMarkdown = await ai.generateWeeklyAnalysis(learnings, 'quiz');
     
-    const quiz = await ai.generateWeeklyAnalysis(learnings, 'quiz');
-    bot.sendMessage(chatId, `🧠 *Your Personalized Quiz*\n\n${quiz}`, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-            inline_keyboard: [[{ text: '📝 Get Summary', callback_data: 'get_summary' }, { text: '🔙 Main Menu', callback_data: 'main_menu' }]]
-        }
-    });
+    // Convert Markdown to HTML
+    const quizHtmlContent = marked.parse(quizMarkdown);
+
+    const fullHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Your Personalized Quiz</title>
+            <style>
+                body { font-family: sans-serif; line-height: 1.6; }
+                h1, h2, h3 { color: #2c3e50; }
+                code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
+                blockquote { border-left: 3px solid #ccc; padding-left: 15px; color: #555; font-style: italic; }
+            </style>
+        </head>
+        <body>
+            <h1>🧠 Your Personalized Quiz</h1>
+            <p>Based on your learnings from the last 7 days.</p>
+            <hr>
+            ${quizHtmlContent}
+        </body>
+        </html>
+    `;
+
+    const pdfBuffer = await generatePdf(fullHtml);
+    
+    if (pdfBuffer) {
+        bot.sendDocument(chatId, pdfBuffer, {
+            caption: "Here is your personalized quiz. Good luck! 🍀"
+        }, {
+            filename: 'personalized-quiz.pdf',
+            contentType: 'application/pdf'
+        });
+    } else {
+        bot.sendMessage(chatId, "❌ Sorry, there was an error creating your quiz PDF.");
+    }
 }
 
-// --- Callback Handlers ---
+
+// --- CALLBACK & MESSAGE HANDLERS ---
+
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const action = callbackQuery.data;
@@ -367,6 +450,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const categories = { 'cat_tech': 'Tech/Programming', 'cat_science': 'Science', 'cat_creative': 'Creative/Art', 'cat_language': 'Language', 'cat_business': 'Business', 'cat_health': 'Health/Fitness', 'cat_general': 'General', 'cat_skip': null };
             const category = categories[action];
             if (userStates[chatId] && userStates[chatId].pendingContent) {
+                // The '/learn' flow finishes here
                 await processLearningEntry(chatId, userStates[chatId].pendingContent, category);
                 delete userStates[chatId];
             }
@@ -386,7 +470,6 @@ bot.on('callback_query', async (callbackQuery) => {
                 userStates[chatId] = { command: 'custom_goal' };
             }
         }
-        // CHANGE: Added this block to handle the 'Export Data' button press
         else if (action === 'export_data') {
             await handleExport(chatId);
         }
@@ -408,6 +491,14 @@ bot.on('callback_query', async (callbackQuery) => {
                 chat_id: chatId, message_id: callbackQuery.message.message_id, parse_mode: 'Markdown', ...getViewOptionsKeyboard()
             });
         }
+        else if (action === 'stop_convo') {
+            delete userStates[chatId];
+            bot.editMessageText("Ok, discussion ended. What's next?", {
+                chat_id: chatId,
+                message_id: callbackQuery.message.message_id,
+                ...getMainMenuKeyboard()
+            });
+        }
 
         bot.answerCallbackQuery(callbackQuery.id);
     } catch (error) {
@@ -416,7 +507,6 @@ bot.on('callback_query', async (callbackQuery) => {
     }
 });
 
-// --- Message Handler ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     if (msg.text && msg.text.startsWith('/')) return;
@@ -428,10 +518,8 @@ bot.on('message', async (msg) => {
             case 'waiting_for_learning':
                 userStates[chatId].pendingContent = msg.text;
                 bot.sendMessage(chatId, "🏷️ *Choose a category* (optional):", { parse_mode: 'Markdown', ...getLearningCategories() });
-                // Note: The 'processLearningEntry' is called from the 'cat_' callback handler
                 break;
             case 'quick_learn':
-                // CHANGE: Call processLearningEntry with 'generateFollowUp' set to false
                 await processLearningEntry(chatId, msg.text, null, false);
                 delete userStates[chatId];
                 break;
@@ -475,7 +563,9 @@ bot.on('message', async (msg) => {
     }
 });
 
-// --- Daily Motivation (Cron Job) ---
+
+// --- CRON JOB & ERROR HANDLING ---
+
 cron.schedule('0 20 * * 0', async () => {
     const users = await db.getAllUsers();
     for (const user of users) {
@@ -493,4 +583,4 @@ bot.on('polling_error', (error) => {
     console.error(`[Polling Error] ${error.code}: ${error.message}`);
 });
 
-console.log("🚀 Enhanced AI Learning Diary Bot is running with full menu system...");
+console.log("🚀 Enhanced AI Learning Diary Bot is running with PDF support...");
