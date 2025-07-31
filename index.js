@@ -248,43 +248,36 @@ async function handleExport(chatId) {
         return;
     }
 
-    // Generate HTML from the learning data
     const learningsHtml = learnings.map(l => {
         const date = format(new Date(l.createdAt), 'yyyy-MM-dd HH:mm');
         const category = l.category ? `<b>[${l.category}]</b> ` : '';
-        const content = l.content.replace(/</g, "&lt;").replace(/>/g, "&gt;"); // Sanitize HTML in content
+        const content = l.content.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         return `<p><em>${date}</em>: ${category}${content}</p>`;
     }).join('\n');
 
     const fullHtml = `
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>Learning Diary Export</title>
-            <style>
-                body { font-family: sans-serif; line-height: 1.6; }
-                h1 { color: #2c3e50; }
-                p { border-bottom: 1px solid #eee; padding-bottom: 10px; }
-                b { color: #2980b9; }
-                em { color: #7f8c8d; }
-            </style>
-        </head>
-        <body>
-            <h1>Your Learning Diary</h1>
-            ${learningsHtml}
-        </body>
+        <head><title>Learning Diary Export</title><style>body { font-family: sans-serif; line-height: 1.6; } h1 { color: #2c3e50; } p { border-bottom: 1px solid #eee; padding-bottom: 10px; } b { color: #2980b9; } em { color: #7f8c8d; }</style></head>
+        <body><h1>Your Learning Diary</h1>${learningsHtml}</body>
         </html>
     `;
 
     const pdfBuffer = await generatePdf(fullHtml);
 
     if (pdfBuffer) {
-        bot.sendDocument(chatId, pdfBuffer, {
-            caption: `📚 Here is your complete learning diary.\n📊 Total entries: ${learnings.length}`
-        }, {
-            filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
-            contentType: 'application/pdf',
-        });
+        // CHANGE: Wrapped the sendDocument call in a try...catch block
+        try {
+            await bot.sendDocument(chatId, pdfBuffer, {
+                caption: `📚 Here is your complete learning diary.\n📊 Total entries: ${learnings.length}`
+            }, {
+                filename: `learning-diary-${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+                contentType: 'application/pdf',
+            });
+        } catch (error) {
+            console.error("Failed to send export PDF:", error.message);
+            bot.sendMessage(chatId, "❌ Sorry, there was an error sending the PDF file. It might be too large or there was a network issue.");
+        }
     } else {
         bot.sendMessage(chatId, "❌ Sorry, there was an error creating your PDF file.");
     }
@@ -368,42 +361,33 @@ async function startQuiz(chatId) {
         return;
     }
 
-    // Get quiz content (assuming it's Markdown from the AI)
     const quizMarkdown = await ai.generateWeeklyAnalysis(learnings, 'quiz');
-    
-    // Convert Markdown to HTML
+    const { marked } = await import('marked');
     const quizHtmlContent = marked.parse(quizMarkdown);
 
     const fullHtml = `
         <!DOCTYPE html>
         <html>
-        <head>
-            <title>Your Personalized Quiz</title>
-            <style>
-                body { font-family: sans-serif; line-height: 1.6; }
-                h1, h2, h3 { color: #2c3e50; }
-                code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
-                blockquote { border-left: 3px solid #ccc; padding-left: 15px; color: #555; font-style: italic; }
-            </style>
-        </head>
-        <body>
-            <h1>🧠 Your Personalized Quiz</h1>
-            <p>Based on your learnings from the last 7 days.</p>
-            <hr>
-            ${quizHtmlContent}
-        </body>
+        <head><title>Your Personalized Quiz</title><style>body { font-family: sans-serif; line-height: 1.6; } h1, h2, h3 { color: #2c3e50; } code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 4px; font-family: monospace; } blockquote { border-left: 3px solid #ccc; padding-left: 15px; color: #555; font-style: italic; }</style></head>
+        <body><h1>🧠 Your Personalized Quiz</h1><p>Based on your learnings from the last 7 days.</p><hr>${quizHtmlContent}</body>
         </html>
     `;
 
     const pdfBuffer = await generatePdf(fullHtml);
     
     if (pdfBuffer) {
-        bot.sendDocument(chatId, pdfBuffer, {
-            caption: "Here is your personalized quiz. Good luck! 🍀"
-        }, {
-            filename: 'personalized-quiz.pdf',
-            contentType: 'application/pdf'
-        });
+        // CHANGE: Wrapped the sendDocument call in a try...catch block
+        try {
+            await bot.sendDocument(chatId, pdfBuffer, {
+                caption: "Here is your personalized quiz. Good luck! 🍀"
+            }, {
+                filename: 'personalized-quiz.pdf',
+                contentType: 'application/pdf'
+            });
+        } catch (error) {
+            console.error("Failed to send quiz PDF:", error.message);
+            bot.sendMessage(chatId, "❌ Sorry, there was an error sending the quiz PDF. Please try again in a moment.");
+        }
     } else {
         bot.sendMessage(chatId, "❌ Sorry, there was an error creating your quiz PDF.");
     }
